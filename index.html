@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>PeerHTML</title>
+	<style type="text/css">
+		iframe{
+			border: 0;
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			width: 100%;
+			height: 100%;
+		}
+
+		input, select {
+			width: 90%;
+		}
+		textarea {
+			width: 90%;
+			height: 500px;
+		}
+	</style>
+	<script src="https://unpkg.com/peerjs@latest/dist/peerjs.min.js"></script>
+</head>
+<body>
+	<div id="control" style="display: none;">
+		<input id="siteurl" value="" type="text"><br>
+		<input id="siteid" value="" type="hidden"><br>
+		<select id="type">
+			<option value="html">HTML</option>
+			<option value="javascript">javascript</option>
+		</select><br>
+		<textarea id="payload"></textarea><br>
+		<input type="button" id="listen" value="listen"><br>
+		<input type="button" id="send" value="send"><br>
+		<textarea id="info"></textarea><br>
+	</div>
+	<script type="text/javascript">
+		const genRandomHex = size => [...Array(size)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
+		
+		// Get URL parameters
+		let urlParams = new URLSearchParams(window.location.search);
+		let siteid = urlParams.get('s') || false;
+
+		let loadHTML = function(html) {
+			var iframe = document.createElement('iframe');
+			document.body.appendChild(iframe);
+			iframe.contentWindow.document.open();
+			iframe.contentWindow.document.write(html);
+			iframe.contentWindow.document.close();
+			return iframe;
+		}
+
+		let loadJs = function(javascript) {
+			return loadHTML('<html>\n<body>\n<script type="text/javascript">\n' + javascript + '\n<'+'/script>\n</body>\n</html>\n');
+		}
+
+		let globalConn = null;
+		if (siteid) {
+			var peer = new Peer();
+			peer.on('open', function() {
+				console.log('Connected');
+				conn = peer.connect('PeerHTML-' + siteid);
+				conn.on('data', function(data){
+					console.log('Got command', data);
+					switch(data.type) {
+						case 'html':
+							loadHTML(data.payload);
+							conn.send({type:'akn'});
+							return;
+						case 'javascript':
+							loadJs(data.payload);
+							conn.send({type:'akn'});
+							return;
+					}
+					console.log('Unknown command');
+				});
+				globalConn = conn;
+			});
+		}
+		else {
+			siteid = window.localStorage.getItem('siteid') || genRandomHex(64);
+			document.getElementById('siteid').value = siteid;
+
+			document.getElementById('listen').addEventListener('click', function(){
+				document.getElementById('siteurl').value = new URL(document.location.href).origin + '/?s=' + encodeURIComponent(siteid);
+				window.localStorage.setItem('siteid', siteid);
+				this.setAttribute('disabled', 'disabled');
+
+				var peer = new Peer('PeerHTML-' + siteid);
+				// on open will be launch when you successfully connect to PeerServer
+				peer.on('connection', function(conn){
+					conn.on("open", () => {
+						console.log('client connected!');
+						document.getElementById('info').value += 'client connected!\n';
+
+						switch(document.getElementById('type').value) {
+							case 'html':
+								conn.send({type:'html', payload:document.getElementById('payload').value});
+								return;
+							case 'javascript':
+								conn.send({type:'javascript', payload:document.getElementById('payload').value});
+								return;
+						}
+                    });
+					conn.on("close", () => {
+						console.log('client disconnected!');
+						document.getElementById('info').value += 'client disconnected!\n';
+					});
+					conn.on('data', function(data){
+						console.log('Got command', data);
+						switch(data.type) {
+							case 'akn':
+								document.getElementById('info').value += 'client excecuted command!\n';
+								return;
+						}
+						console.log('Unknown command');
+					});
+					globalConn = conn;
+				});
+			});
+			document.getElementById('send').addEventListener('click', function(){
+				conn = globalConn;
+				switch(document.getElementById('type').value) {
+					case 'html':
+						conn.send({type:'html', payload:document.getElementById('payload').value});
+						return;
+					case 'javascript':
+						conn.send({type:'javascript', payload:document.getElementById('payload').value});
+						return;
+				}
+			});
+			document.getElementById('control').style.display = 'block';
+		}
+	</script>
+</body>
+</html>
